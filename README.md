@@ -12,3 +12,13 @@ scan --url the_link_to_the_.git_url --id veracode_app_id --key github_oath_key(o
 scan --app the_name_of_the_app_profile_you_previously_created
 
 The first run will require you give your Veracode API credentials to allow API scanning.
+
+
+Required libraries:
+JGit
+Veracode API
+argparse4j
+yamlbeans
+slf4j
+jsch
+javax.xml.bind
