@@ -89,7 +89,7 @@ public class VeraGitUtils {
 						outputStream.write(bytes, 0, bytes.length);
 						outputStream.closeEntry();
 					} catch (IOException e) {
-						e.printStackTrace();
+						System.out.println("Failed to delete file");
 					}
 					return FileVisitResult.CONTINUE;
 				}
