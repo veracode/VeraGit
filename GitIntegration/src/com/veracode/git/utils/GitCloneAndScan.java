@@ -37,7 +37,6 @@ public class GitCloneAndScan {
 		try {
 			c_command.call();
 		} catch (GitAPIException e) {
-			e.printStackTrace();
 			System.out.println("Git clone failed");
 			VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
 			return false;
