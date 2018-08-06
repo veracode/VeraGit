@@ -45,7 +45,8 @@ public class VeracodeGit {
 				writer.write(settings);
 				writer.close();
 			} catch (IOException e) {
-				e.printStackTrace();
+				System.out.println("Failed to save Veracode profile");
+				System.exit(1);
 			}
 		} else {
 
@@ -54,17 +55,17 @@ public class VeracodeGit {
 				reader = new YamlReader(new FileReader(VeraGitUtils.getSettingsPath()));
 
 			} catch (FileNotFoundException e1) {
-				System.out.println("Settings file doesn't exist");
+				System.out.println("Veracode settings file doesn't exist");
 				System.exit(1);
 			}
 			try {
 				settings = reader.read(VeracodeGitSettings.class);
 				reader.close();
 			} catch (YamlException e) {
-				System.out.println("Failed to load settings file");
+				System.out.println("Failed to load Veracode settings file due to a formatting issue");
 				System.exit(1);
 			} catch (IOException e) {
-				System.out.println("Failed to load settings file");
+				System.out.println("Failed to load Veracode settings file");
 				System.exit(1);
 			}
 
