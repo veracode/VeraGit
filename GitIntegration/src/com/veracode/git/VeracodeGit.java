@@ -1,7 +1,6 @@
 package com.veracode.git;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -25,22 +24,30 @@ import net.sourceforge.argparse4j.inf.Subparsers;
 
 public class VeracodeGit {
 
+	/**
+	 * 
+	 * @param args
+	 *            args from the command line
+	 * @return a VeracodeGitSettings filled with information from args
+	 */
 	private static VeracodeGitSettings manageSettings(String[] args) {
 		File vera_git_folder = VeraGitUtils.getSettingsPath();
 
 		VeracodeGitSettings settings = null;
-
+		String id = null;
+		String secret = null;
 		if (!vera_git_folder.exists()) {
-			Scanner scanner = new Scanner(System.in);
-			System.out.println("No configuration file exists. Please follow the steps to create one");
-			System.out.println("Enter Veracode API id:");
-			String id = scanner.nextLine();
-			System.out.println("Enter Veracode API secret key:");
-			String secret = scanner.nextLine();
-			scanner.close();
+			try (Scanner scanner = new Scanner(System.in)) {
+				System.out.println("No configuration file exists. Please follow the steps to create one.");
+				System.out.println("Enter Veracode API id:");
+				id = scanner.nextLine().trim();
+				System.out.println("Enter Veracode API secret key:");
+				secret = scanner.nextLine().trim();
+			}
 
 			settings = new VeracodeGitSettings(id, secret);
-			try {
+
+			try (FileWriter f_writer = new FileWriter(VeraGitUtils.getSettingsPath())) {
 				YamlWriter writer = new YamlWriter(new FileWriter(VeraGitUtils.getSettingsPath()));
 				writer.write(settings);
 				writer.close();
@@ -48,80 +55,126 @@ public class VeracodeGit {
 				System.out.println("Failed to save Veracode profile");
 				System.exit(1);
 			}
+
 		} else {
 
-			YamlReader reader = null;
-			try {
-				reader = new YamlReader(new FileReader(VeraGitUtils.getSettingsPath()));
-
-			} catch (FileNotFoundException e1) {
+			try (FileReader f_reader = new FileReader(VeraGitUtils.getSettingsPath())) {
+				YamlReader reader = new YamlReader(f_reader);
+				try {
+					settings = reader.read(VeracodeGitSettings.class);
+					reader.close();
+				} catch (YamlException e) {
+					System.out.println("Failed to load Veracode settings file due to a formatting issue");
+					System.exit(1);
+				} catch (IOException e) {
+					System.out.println("Failed to load Veracode settings file");
+					System.exit(1);
+				} finally {
+					reader.close();
+				}
+			} catch (IOException e) {
 				System.out.println("Veracode settings file doesn't exist");
 				System.exit(1);
 			}
-			try {
-				settings = reader.read(VeracodeGitSettings.class);
-				reader.close();
-			} catch (YamlException e) {
-				System.out.println("Failed to load Veracode settings file due to a formatting issue");
-				System.exit(1);
-			} catch (IOException e) {
-				System.out.println("Failed to load Veracode settings file");
-				System.exit(1);
-			}
-
 		}
 		return settings;
 	}
 
+	/**
+	 * Executes a scan
+	 * 
+	 * @param ns
+	 *            a Namespace from Yamlbeans
+	 * @param settings
+	 *            VeracodeGitSettings
+	 * @param app_settings
+	 *            VeracodeGitAppSettings
+	 * @return true if the scan was successfully executed, false otherwise
+	 */
 	public static boolean executeScanSubparser(Namespace ns, VeracodeGitSettings settings,
 			VeracodeGitAppSettings app_settings) {
 		if (ns.getString("app") != null) {
-
-			YamlReader reader = null;
-			String app_name = VeraGitUtils.formatArgsString(ns.getString("app"));
-
-			try {
-				reader = new YamlReader(new FileReader(VeraGitUtils.getAppSettingsPath(app_name)));
-			} catch (FileNotFoundException e1) {
-				e1.printStackTrace();
-			}
-			try {
-				app_settings = reader.read(VeracodeGitAppSettings.class);
-			} catch (YamlException e) {
-				e.printStackTrace();
-			}
-			boolean no_key = app_settings.isPublic();
-			if (no_key)
-				GitCloneAndScan.cloneAndScan(app_settings.getUrl(), app_settings.getAppId(), settings.getApiID(),
-						settings.getApiSecretKey());
-			else
-				GitCloneAndScan.cloneAndScan(app_settings.getUrl(), app_settings.getKey(), app_settings.getAppId(),
-						settings.getApiID(), settings.getApiSecretKey());
-
+			executeAppScan(ns, settings, app_settings);
 		} else if (ns.getString("url") != null) {
-			String key = VeraGitUtils.formatArgsString(ns.getString("key"));
-			boolean no_key = ns.getBoolean("public");
-			String app_id = VeraGitUtils.formatArgsString(ns.getString("id"));
-			String url = VeraGitUtils.formatArgsString(ns.getString("url"));
-
-			if (key == null && !no_key) {
-				System.out.println("A key is required when scanning using .git url or use option --no-key");
-				System.exit(1);
-			}
-			if (app_id == null) {
-				System.out.println("An id for the application on Veracode is required when scanning using URL");
-				System.exit(1);
-			}
-			if (no_key)
-				return GitCloneAndScan.cloneAndScan(url, app_id, settings.getApiID(), settings.getApiSecretKey());
-			else
-				return GitCloneAndScan.cloneAndScan(url, key, app_id, settings.getApiID(), settings.getApiSecretKey());
+			return executeUrlScan(ns, settings);
 		} else
 			return false;
 		return true;
 	}
 
-	public static boolean executeCreateSubparser(Namespace ns, VeracodeGitSettings settings,
+	/**
+	 * Executes a scan based on an application profile
+	 * 
+	 * @param ns
+	 *            a Namespace from Yamlbeans
+	 * @param settings
+	 *            VeracodeGitSettings
+	 * @param app_settings
+	 *            VeracodeGitAppSettings
+	 * @return true if the scan was successfully executed, false otherwise
+	 */
+	private static boolean executeAppScan(Namespace ns, VeracodeGitSettings settings,
+			VeracodeGitAppSettings app_settings) {
+		String app_name = VeraGitUtils.formatArgsString(ns.getString("app"));
+
+		try (FileReader f_reader = new FileReader(VeraGitUtils.getAppSettingsPath(app_name))) {
+			YamlReader reader = new YamlReader(f_reader);
+			app_settings = reader.read(VeracodeGitAppSettings.class);
+		} catch (IOException e) {
+			System.out.println("Failed to load app profile");
+			System.exit(1);
+		}
+		boolean no_key = app_settings.isPublic();
+		if (no_key) {
+			return GitCloneAndScan.cloneAndScan(app_settings.getUrl(), app_settings.getAppId(), settings.getApiID(),
+					settings.getApiSecretKey());
+		} else {
+			return GitCloneAndScan.cloneAndScan(app_settings.getUrl(), app_settings.getKey(), app_settings.getAppId(),
+					settings.getApiID(), settings.getApiSecretKey());
+		}
+	}
+
+	/**
+	 * Executes a scan based on a URL
+	 * 
+	 * @param ns
+	 *            a Namespace from Yamlbeans
+	 * @param settings
+	 *            VeracodeGitSettings
+	 * @return true if the scan was successfully executed, false otherwise
+	 */
+	private static boolean executeUrlScan(Namespace ns, VeracodeGitSettings settings) {
+		String key = VeraGitUtils.formatArgsString(ns.getString("key"));
+		boolean no_key = ns.getBoolean("public");
+		String app_id = VeraGitUtils.formatArgsString(ns.getString("id"));
+		String url = VeraGitUtils.formatArgsString(ns.getString("url"));
+
+		if (key == null && !no_key) {
+			System.out.println("A key is required when scanning using .git url or use option --no-key");
+			System.exit(1);
+		}
+		if (app_id == null) {
+			System.out.println("An id for the application on Veracode is required when scanning using URL");
+			System.exit(1);
+		}
+		if (no_key) {
+			return GitCloneAndScan.cloneAndScan(url, app_id, settings.getApiID(), settings.getApiSecretKey());
+		} else {
+			return GitCloneAndScan.cloneAndScan(url, key, app_id, settings.getApiID(), settings.getApiSecretKey());
+		}
+	}
+
+	/**
+	 * Creates an application profile
+	 * 
+	 * @param ns
+	 *            a Namespace from YamlBeans
+	 * @param settings
+	 *            VeracodeGitSettings
+	 * @param app_settings
+	 *            VeracodeGitAppSettings
+	 */
+	public static void executeCreateSubparser(Namespace ns, VeracodeGitSettings settings,
 			VeracodeGitAppSettings app_settings) {
 		if (ns.getString("name") != null) {
 			String app_name = VeraGitUtils.formatArgsString(ns.getString("name"));
@@ -136,24 +189,17 @@ public class VeracodeGit {
 			}
 
 			app_settings = new VeracodeGitAppSettings(app_name, id, url, key, no_key);
-			YamlWriter writer = null;
-			try {
-				writer = new YamlWriter(new FileWriter(VeraGitUtils.getAppSettingsPath(app_name)));
-			} catch (IOException e1) {
-				System.out.println("Failed to save application profile.");
-				System.exit(1);
-			}
-			try {
+			try (FileWriter f_writer = new FileWriter(VeraGitUtils.getAppSettingsPath(app_name))) {
+				YamlWriter writer = new YamlWriter(new FileWriter(VeraGitUtils.getAppSettingsPath(app_name)));
 				writer.write(app_settings);
 				writer.close();
-			} catch (YamlException e) {
+			} catch (IOException e) {
 				System.out.println("Failed to save application profile.");
 				System.exit(1);
+
 			}
 			System.out.println("Profile successfully created");
-		} else
-			return false;
-		return true;
+		}
 	}
 
 	public static void main(String[] args) {
@@ -195,8 +241,11 @@ public class VeracodeGit {
 			if (ns != null) {
 
 				executeCreateSubparser(ns, settings, app_settings);
-				if (ns.get("app") == null)
+				if (ns.get("app") == null) {
 					executeScanSubparser(ns, settings, app_settings);
+				}
+			} else {
+				System.out.println("Failed to parse arguments");
 			}
 		} catch (ArgumentParserException e) {
 			parser.handleError(e);
