@@ -10,28 +10,69 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import com.veracode.apiwrapper.wrappers.UploadAPIWrapper;
 
 public class GitCloneAndScan {
+	/**
+	 * Clones a repoistory from Github and submits it to Veracode for scanning.
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param oauth_token
+	 *            Github OAuth key
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if scan successfully submitted, false if not
+	 */
+	public static boolean cloneAndScan(String url, String oauth_token, String app_id, String v_api_id,
+			String v_api_secret) {
 
-	public static boolean cloneAndScan(String url, String key, String app_id, String v_api_id, String v_api_secret) {
-
-		if (!clone(url, key, app_id))
+		if (!clone(url, oauth_token, app_id)) {
 			return false;
+		}
 
 		return scan(app_id, v_api_id, v_api_secret);
-
 	}
 
+	/**
+	 * Clones a repoistory from Github and submits it to Veracode for scanning.
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if scan successfully submitted, false if not
+	 */
 	public static boolean cloneAndScan(String url, String app_id, String v_api_id, String v_api_secret) {
-		if (!clone(url, null, app_id))
+		if (!clone(url, null, app_id)) {
 			return false;
-		return scan(app_id, v_api_id, v_api_secret);
+		}
 
+		return scan(app_id, v_api_id, v_api_secret);
 	}
 
-	private static boolean clone(String url, String oath_token, String app_id) {
+	/**
+	 * Clones a repository from Github to the local machine
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param ouath_token
+	 *            Github OAuth key
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @return true if the clone was successfully, false if not
+	 */
+	private static boolean clone(String url, String ouath_token, String app_id) {
 		CloneCommand c_command = Git.cloneRepository();
 		c_command.setURI(url);
-		if (oath_token != null)
-			c_command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(oath_token, ""));
+		if (ouath_token != null) {
+			c_command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(ouath_token, ""));
+		}
 		c_command.setDirectory(VeraGitUtils.getCodePath(app_id));
 
 		try {
@@ -45,6 +86,17 @@ public class GitCloneAndScan {
 		return true;
 	}
 
+	/**
+	 * Submits a local Git repository to Veracode for scanning
+	 * 
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if the scan was successfully initiated, false if not
+	 */
 	private static boolean scan(String app_id, String v_api_id, String v_api_secret) {
 		VeraGitUtils.compress(VeraGitUtils.getCodePath(app_id).getAbsolutePath());
 		UploadAPIWrapper upload_wrap = new UploadAPIWrapper();
@@ -58,7 +110,7 @@ public class GitCloneAndScan {
 		}
 
 		try {
-			upload_wrap.beginPreScan(app_id);
+			upload_wrap.beginPreScan(app_id, null, "true");
 		} catch (IOException e) {
 			System.out.println("Scan failed to initiate");
 			VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
