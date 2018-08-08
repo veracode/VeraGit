@@ -1,103 +1,125 @@
 package com.veracode.git.utils;
 
-import static java.nio.file.FileVisitResult.CONTINUE;
-
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
-public class VeraGitUtils {
+import org.eclipse.jgit.api.CloneCommand;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 
-	public static File getPath() {
-		return new File(System.getProperty("user.home") + "/VeraGit");
-	}
+import com.veracode.apiwrapper.wrappers.UploadAPIWrapper;
 
-	public static File getSettingsPath() {
-		return new File(getPath() + "/veragit.yaml");
-	}
+public class GitCloneAndScan {
+	/**
+	 * Clones a repoistory from Github and submits it to Veracode for scanning.
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param oauth_token
+	 *            Github OAuth key
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if scan successfully submitted, false if not
+	 */
+	public static boolean cloneAndScan(String url, String oauth_token, String app_id, String v_api_id,
+			String v_api_secret) {
 
-	public static File getAppSettingsPath(String app_name) {
-		return new File(getPath() + "/" + app_name + ".yaml");
-
-	}
-
-	public static File getAppPath(String app_name) {
-		return new File(getPath().getAbsolutePath() + "/repos/" + app_name);
-	}
-
-	public static File getCodePath(String app_name) {
-		return new File(getAppPath(app_name).getPath() + "/code/");
-	}
-
-	public static File getZipPath(String app_name) {
-		return new File(getAppPath(app_name).getAbsolutePath() + "/code.zip");
-	}
-
-	public static void deleteDirectory(File file) {
-		Path dir = Paths.get(file.getAbsolutePath());
-		try {
-			Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
-
-				@Override
-				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-					Files.delete(file);
-					return CONTINUE;
-				}
-
-				@Override
-				public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-					if (exc == null) {
-						Files.delete(dir);
-						return CONTINUE;
-					} else {
-						throw exc;
-					}
-				}
-
-			});
-		} catch (IOException e) {
-			e.printStackTrace();
+		if (!clone(url, oauth_token, app_id)) {
+			return false;
 		}
+
+		return scan(app_id, v_api_id, v_api_secret);
 	}
 
-	public static String formatArgsString(String s) {
-		if (s == null)
-			return null;
-		return s.replace("[", "").replace("]", "");
-	}
-
-	public static void compress(String dirPath) {
-		Path sourceDir = Paths.get(dirPath);
-		String zipFileName = dirPath.concat(".zip");
-		try {
-			ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(zipFileName));
-			Files.walkFileTree(sourceDir, new SimpleFileVisitor<Path>() {
-				@Override
-				public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-					try {
-						Path targetFile = sourceDir.relativize(file);
-						outputStream.putNextEntry(new ZipEntry(targetFile.toString()));
-						byte[] bytes = Files.readAllBytes(file);
-						outputStream.write(bytes, 0, bytes.length);
-						outputStream.closeEntry();
-					} catch (IOException e) {
-						System.out.println("Failed to delete file");
-					}
-					return FileVisitResult.CONTINUE;
-				}
-			});
-			outputStream.close();
-		} catch (IOException e) {
-			e.printStackTrace();
+	/**
+	 * Clones a repoistory from Github and submits it to Veracode for scanning.
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if scan successfully submitted, false if not
+	 */
+	public static boolean cloneAndScan(String url, String app_id, String v_api_id, String v_api_secret) {
+		if (!clone(url, null, app_id)) {
+			return false;
 		}
+
+		return scan(app_id, v_api_id, v_api_secret);
+	}
+
+	/**
+	 * Clones a repository from Github to the local machine
+	 * 
+	 * @param url
+	 *            the URL of the .git repository on Github
+	 * @param ouath_token
+	 *            Github OAuth key
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @return true if the clone was successfully, false if not
+	 */
+	private static boolean clone(String url, String ouath_token, String app_id) {
+		CloneCommand c_command = Git.cloneRepository();
+		c_command.setURI(url);
+		if (ouath_token != null) {
+			c_command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(ouath_token, ""));
+		}
+		c_command.setDirectory(VeraGitUtils.getCodePath(app_id));
+
+		try {
+			c_command.call();
+		} catch (GitAPIException e) {
+			System.out.println("Git clone failed");
+			VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Submits a local Git repository to Veracode for scanning
+	 * 
+	 * @param app_id
+	 *            the id of the application on Veracode
+	 * @param v_api_id
+	 *            Veracode API key
+	 * @param v_api_secret
+	 *            Veracode API secret
+	 * @return true if the scan was successfully initiated, false if not
+	 */
+	private static boolean scan(String app_id, String v_api_id, String v_api_secret) {
+		VeraGitUtils.compress(VeraGitUtils.getCodePath(app_id).getAbsolutePath());
+		UploadAPIWrapper upload_wrap = new UploadAPIWrapper();
+		upload_wrap.setUpApiCredentials(v_api_id, v_api_secret);
+		try {
+			upload_wrap.uploadFile(app_id, VeraGitUtils.getZipPath(app_id).getAbsolutePath());
+		} catch (IOException e) {
+			System.out.println("Upload to Veracode failed");
+			VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
+			return false;
+		}
+
+		try {
+			upload_wrap.beginPreScan(app_id, null, "true");
+		} catch (IOException e) {
+			System.out.println("Scan failed to initiate");
+			VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
+			return false;
+		}
+		VeraGitUtils.deleteDirectory(VeraGitUtils.getAppPath(app_id));
+		System.out.println("Scan successfully initiated");
+		return true;
+
 	}
 
 }
